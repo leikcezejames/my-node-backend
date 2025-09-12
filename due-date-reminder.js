@@ -15,7 +15,7 @@ admin.initializeApp({
 const db = admin.firestore();
 
 // Your backend API URL
-const BACKEND_URL = process.env.BACKEND_URL || 'http://my-node-backend-production-2ebf.up.railway.app';
+const BACKEND_URL = process.env.BACKEND_URL || 'https://my-node-backend-production-2ebf.up.railway.app';
 
 // Helper functions
 function getSubscriberName(payment) {

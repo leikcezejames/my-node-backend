@@ -1336,12 +1336,12 @@ app.post("/api/notify-disconnection-notice", async (req, res) => {
 const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
   console.log(`🚀 SMS & Email Backend server running on port ${PORT}`)
-  console.log(`📱 SMS API available at: http://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/send-sms`)
-  console.log(`📧 OTP API available at: http://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/send-otp`)
-  console.log(`📮 Advisory Email API available at: http://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/send-advisory-email`)
+  console.log(`📱 SMS API available at: https://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/send-sms`)
+  console.log(`📧 OTP API available at: https://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/send-otp`)
+  console.log(`📮 Advisory Email API available at: https://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/send-advisory-email`)
   console.log(`🔔 Notification APIs available`)
   console.log(`🔑 SMS API Key configured: ${SEMAPHORE_CONFIG.apiKey ? "Yes" : "No"}`)
   console.log(`📬 Email configured: ${EMAIL_CONFIG.user && EMAIL_CONFIG.pass ? "Yes" : "No"}`)
-  console.log(`🌐 Health check: http://my-node-backend-production-2ebf.up.railway.app:${PORT}/`)
-  console.log(`🧪 Test endpoint: http://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/test`)
+  console.log(`🌐 Health check: https://my-node-backend-production-2ebf.up.railway.app:${PORT}/`)
+  console.log(`🧪 Test endpoint: https://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/test`)
 })
