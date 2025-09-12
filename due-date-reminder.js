@@ -4,10 +4,12 @@ const admin = require('firebase-admin');
 const fetch = require('node-fetch');
 require('dotenv').config();
 
-// Initialize Firebase Admin SDK
-const serviceAccount = require('./geosubcribers-firebase-adminsdk-fbsvc-c89f254aaf.json'); // Update this path
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+  credential: admin.credential.cert({
+    projectId: process.env.FIREBASE_PROJECT_ID,
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+  }),
 });
 
 const db = admin.firestore();
