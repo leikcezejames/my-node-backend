@@ -1,0 +1,29 @@
+{
+  "name": "capstone-backend",
+  "version": "1.0.0",
+  "description": "Backend for SMS and Email services",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "start:sms": "node api/send-sms.js",
+    "start:email": "node api/send-email.js",
+    "dev": "nodemon server.js",
+    "dev:sms": "nodemon api/send-sms.js",
+    "dev:email": "nodemon api/send-email.js"
+  },
+  "dependencies": {
+    "axios": "^1.11.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^4.21.2",
+    "firebase-admin": "^13.5.0",
+    "googleapis": "^126.0.1",
+    "node-cron": "^4.2.1",
+    "node-fetch": "^2.6.7",
+    "node-schedule": "^2.1.1",
+    "nodemailer": "^6.10.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
