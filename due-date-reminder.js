@@ -15,7 +15,7 @@ admin.initializeApp({
 const db = admin.firestore();
 
 // Your backend API URL
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
+const BACKEND_URL = process.env.BACKEND_URL || 'https://capstone-backend-production.up.railway.app';
 
 // Helper functions
 function getSubscriberName(payment) {
