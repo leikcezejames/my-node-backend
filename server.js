@@ -10,7 +10,7 @@ const app = express()
 // Middleware
 app.use(
   cors({
-    origin: ["http://localhost:8080", "http://localhost:8081", "http://127.0.0.1:8080"], // Vue dev server URLs
+    origin: ["http://localhost:8080", "http://localhost:8081", "http://127.0.0.1:8080", "https://geosubcribers.web.app"], // Vue dev server URLs
     credentials: true,
   }),
 )
