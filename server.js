@@ -1,8 +1,8 @@
 const express = require("express")
 const cors = require("cors")
 const fetch = require("node-fetch")
+const nodemailer = require("nodemailer")
 const crypto = require("crypto")
-const sgMail = require("@sendgrid/mail")
 require("dotenv").config()
 
 const app = express()
@@ -31,39 +31,26 @@ const EMAIL_CONFIG = {
   from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
 }
 
-if (process.env.SENDGRID_API_KEY) {
-  sgMail.setApiKey(process.env.SENDGRID_API_KEY)
-  console.log("✅ SendGrid configured")
-} else {
-  console.error("❌ SENDGRID_API_KEY not set")
-}
-
 // OTP storage and email transporter
 const otpStore = new Map()
+let transporter
 
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-
-async function sendEmail(options) {
-  try {
-    const msg = {
-      to: options.to,
-      from: process.env.EMAIL_FROM,
-      subject: options.subject,
-      text: options.text,
-      html: options.html,
-    }
-
-    // Para sa multiple recipients (advisory)
-    if (options.bcc) {
-      msg.bcc = options.bcc
-    }
-
-    await sgMail.send(msg)
-    return { success: true }
-  } catch (error) {
-    console.error("❌ SendGrid error:", error.response?.body || error.message)
-    return { success: false, error }
+// Setup email transporter
+try {
+  if (EMAIL_CONFIG.user && EMAIL_CONFIG.pass) {
+    transporter = nodemailer.createTransport({
+      service: EMAIL_CONFIG.service,
+      auth: {
+        user: EMAIL_CONFIG.user,
+        pass: EMAIL_CONFIG.pass,
+      },
+    })
+    console.log("✅ Email transporter configured")
+  } else {
+    console.log("⚠️ Email not configured - Email features will not work")
   }
+} catch (error) {
+  console.error("❌ Email configuration error:", error.message)
 }
 
 // Helper functions
@@ -540,7 +527,17 @@ app.post("/api/send-otp", async (req, res) => {
     const { email, name } = req.body
 
     if (!email) {
-      return res.status(400).json({ success: false, error: "Email is required" })
+      return res.status(400).json({
+        success: false,
+        error: "Email is required",
+      })
+    }
+
+    if (!transporter) {
+      return res.status(500).json({
+        success: false,
+        error: "Email service not configured",
+      })
     }
 
     const otp = generateOTP()
@@ -597,9 +594,7 @@ app.post("/api/send-otp", async (req, res) => {
       text: `Hello ${name || "there"}! Your verification code is: ${otp}. This code will expire in 5 minutes.`,
     }
 
-    const result = await sendEmail(mailOptions)
-
-    if (!result.success) throw result.error
+    await transporter.sendMail(mailOptions)
 
     console.log(`✅ OTP sent successfully to ${email}`)
 
