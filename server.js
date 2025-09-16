@@ -21,6 +21,15 @@ app.use(
 )
 app.use(express.json())
 
+// Email transporter configuration
+const transporter = nodemailer.createTransport({
+  service: process.env.EMAIL_SERVICE || "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+})
+
 // EXISTING: Semaphore configuration
 const SEMAPHORE_CONFIG = {
   apiKey: process.env.SEMAPHORE_API_KEY,
@@ -36,27 +45,8 @@ const EMAIL_CONFIG = {
   from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
 }
 
-// OTP storage and email transporter
+// OTP storage only (removed email transporter)
 const otpStore = new Map()
-let transporter
-
-// Setup email transporter
-try {
-  if (EMAIL_CONFIG.user && EMAIL_CONFIG.pass) {
-    transporter = nodemailer.createTransport({
-      service: EMAIL_CONFIG.service,
-      auth: {
-        user: EMAIL_CONFIG.user,
-        pass: EMAIL_CONFIG.pass,
-      },
-    })
-    console.log("✅ Email transporter configured")
-  } else {
-    console.log("⚠️ Email not configured - Email features will not work")
-  }
-} catch (error) {
-  console.error("❌ Email configuration error:", error.message)
-}
 
 // Helper functions
 function generateOTP() {
@@ -131,12 +121,11 @@ app.get("/", (req, res) => {
       "/api/notify-documents-rejected",
       "/api/notify-receipt-approved", // NEW
       "/api/notify-receipt-rejected",
-      "/api/send-otp",
+      "/api/send-sms-otp",
       "/api/verify-otp",
       "/api/send-advisory-email",
       "/api/get-user-emails",
       "/api/send-contact-email",
-      "/api/send-sms-otp",
     ],
   })
 })
@@ -527,97 +516,6 @@ TVNET • customercare.tvnet@gmail.com • 0916-594-3229
   }
 })
 
-// Send OTP endpoint
-app.post("/api/send-otp", async (req, res) => {
-  try {
-    const { email, name } = req.body
-
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        error: "Email is required",
-      })
-    }
-
-    if (!transporter) {
-      return res.status(500).json({
-        success: false,
-        error: "Email service not configured",
-      })
-    }
-
-    const otp = generateOTP()
-    const sessionId = generateSessionId()
-    const expiresAt = Date.now() + 5 * 60 * 1000 // 5 minutes
-
-    otpStore.set(sessionId, {
-      otp,
-      email,
-      name,
-      expiresAt,
-      attempts: 0,
-      maxAttempts: 3,
-    })
-
-    console.log(`📧 Sending OTP ${otp} to ${email}`)
-
-    const mailOptions = {
-      from: `"Tamaraw Vision Network, Inc. (TVNET)" <${EMAIL_CONFIG.from}>`,
-      to: email,
-      subject: "Email Verification Code",
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background: linear-gradient(135deg, rgb(255, 51, 51), rgb(51, 102, 255), rgb(255, 255, 255)); padding: 30px; border-radius: 10px; text-align: center; margin-bottom: 30px;">
-            <h1 style="color: white; margin: 0; font-size: 28px;">Email Verification</h1>
-          </div>
-          
-          <div style="background: #f8fafc; padding: 30px; border-radius: 10px; margin-bottom: 30px;">
-            <h2 style="color: #1f2937; margin-top: 0;">Hello ${name || "there"}!</h2>
-            <p style="color: #6b7280; font-size: 16px; line-height: 1.6;">
-              Thank you for signing up! Please use the verification code below to complete your registration:
-            </p>
-            
-            <div style="background: white; border: 2px dashed #3b82f6; border-radius: 10px; padding: 20px; text-align: center; margin: 30px 0;">
-              <div style="font-size: 32px; font-weight: bold; color: #3b82f6; letter-spacing: 8px; font-family: 'Courier New', monospace;">
-                ${otp}
-              </div>
-            </div>
-            
-            <p style="color: #ef4444; font-size: 14px; text-align: center; margin: 20px 0;">
-              ⏰ This code will expire in 5 minutes
-            </p>
-            
-            <p style="color: #6b7280; font-size: 14px; line-height: 1.6;">
-              If you didn't request this verification code, please ignore this email.
-            </p>
-          </div>
-          
-          <div style="text-align: center; color: #9ca3af; font-size: 12px;">
-            <p>This is an automated message, please do not reply to this email.</p>
-          </div>
-        </div>
-      `,
-      text: `Hello ${name || "there"}! Your verification code is: ${otp}. This code will expire in 5 minutes.`,
-    }
-
-    await transporter.sendMail(mailOptions)
-
-    console.log(`✅ OTP sent successfully to ${email}`)
-
-    res.json({
-      success: true,
-      sessionId,
-      message: "Verification code sent to your email",
-    })
-  } catch (error) {
-    console.error("❌ Error sending OTP:", error)
-    res.status(500).json({
-      success: false,
-      error: "Failed to send verification code",
-    })
-  }
-})
-
 // Send SMS OTP endpoint using Semaphore
 app.post("/api/send-sms-otp", async (req, res) => {
   try {
@@ -715,7 +613,6 @@ app.post("/api/send-sms-otp", async (req, res) => {
   }
 })
 
-// Verify OTP endpoint
 app.post("/api/verify-otp", async (req, res) => {
   try {
     const { sessionId, otp } = req.body
@@ -1443,9 +1340,6 @@ app.listen(PORT, () => {
   console.log(`📧 OTP API available at: https://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/send-otp`)
   console.log(
     `📮 Advisory Email API available at: https://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/send-advisory-email`,
-  )
-  console.log(
-    `📱 SMS OTP API available at: https://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/send-sms-otp`,
   )
   console.log(`🔔 Notification APIs available`)
   console.log(`🔑 SMS API Key configured: ${SEMAPHORE_CONFIG.apiKey ? "Yes" : "No"}`)
