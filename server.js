@@ -40,25 +40,8 @@ if (process.env.SENDGRID_API_KEY) {
 
 // OTP storage and email transporter
 const otpStore = new Map()
-let transporter
 
-// Setup email transporter
-try {
-  if (EMAIL_CONFIG.user && EMAIL_CONFIG.pass) {
-    transporter = nodemailer.createTransport({
-      service: EMAIL_CONFIG.service,
-      auth: {
-        user: EMAIL_CONFIG.user,
-        pass: EMAIL_CONFIG.pass,
-      },
-    })
-    console.log("✅ Email transporter configured")
-  } else {
-    console.log("⚠️ Email not configured - Email features will not work")
-  }
-} catch (error) {
-  console.error("❌ Email configuration error:", error.message)
-}
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 async function sendEmail(options) {
   try {
