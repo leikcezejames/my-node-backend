@@ -608,72 +608,6 @@ app.post("/api/send-otp", async (req, res) => {
   }
 })
 
-// Verify OTP endpoint
-app.post("/api/verify-otp", async (req, res) => {
-  try {
-    const { sessionId, otp } = req.body
-
-    if (!sessionId || !otp) {
-      return res.status(400).json({
-        success: false,
-        error: "Session ID and OTP are required",
-      })
-    }
-
-    const otpData = otpStore.get(sessionId)
-
-    if (!otpData) {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid or expired session",
-      })
-    }
-
-    if (Date.now() > otpData.expiresAt) {
-      otpStore.delete(sessionId)
-      return res.status(400).json({
-        success: false,
-        error: "Verification code has expired",
-      })
-    }
-
-    if (otpData.attempts >= otpData.maxAttempts) {
-      otpStore.delete(sessionId)
-      return res.status(400).json({
-        success: false,
-        error: "Too many failed attempts",
-      })
-    }
-
-    if (otpData.otp !== otp) {
-      otpData.attempts++
-      otpStore.set(sessionId, otpData)
-
-      return res.status(400).json({
-        success: false,
-        error: "Invalid verification code",
-        attemptsLeft: otpData.maxAttempts - otpData.attempts,
-      })
-    }
-
-    otpStore.delete(sessionId)
-
-    console.log(`✅ OTP verified successfully for ${otpData.email}`)
-
-    res.json({
-      success: true,
-      message: "Email verified successfully",
-      email: otpData.email,
-    })
-  } catch (error) {
-    console.error("❌ Error verifying OTP:", error)
-    res.status(500).json({
-      success: false,
-      error: "Failed to verify code",
-    })
-  }
-})
-
 // SMS notification helper function
 const sendSMSNotification = async (phoneNumber, message) => {
   try {
@@ -1507,13 +1441,14 @@ app.post("/api/verify-otp", async (req, res) => {
 
     otpStore.delete(sessionId)
 
-    console.log(`✅ OTP verified successfully for ${otpData.phoneNumber}`)
+    console.log(`✅ OTP verified successfully for ${otpData.phoneNumber || otpData.email}`)
 
     res.json({
       success: true,
-      message: "Phone number verified successfully",
+      message: otpData.phoneNumber ? "Phone number verified successfully" : "Email verified successfully",
       phoneNumber: otpData.phoneNumber,
-      email: otpData.email, // Include email for account creation
+      email: otpData.email,
+      name: otpData.name,
     })
   } catch (error) {
     console.error("❌ Error verifying OTP:", error)
