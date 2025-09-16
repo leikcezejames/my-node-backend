@@ -562,36 +562,77 @@ app.post("/api/send-otp", async (req, res) => {
 
     const otp = generateOTP()
     const sessionId = generateSessionId()
-    const expiresAt = Date.now() + 5 * 60 * 1000
+    const expiresAt = Date.now() + 5 * 60 * 1000 // 5 minutes
 
-    otpStore.set(sessionId, { otp, email, name, expiresAt, attempts: 0, maxAttempts: 3 })
+    otpStore.set(sessionId, {
+      otp,
+      email,
+      name,
+      expiresAt,
+      attempts: 0,
+      maxAttempts: 3,
+    })
 
     console.log(`📧 Sending OTP ${otp} to ${email}`)
 
     const mailOptions = {
+      from: `"Tamaraw Vision Network, Inc. (TVNET)" <${EMAIL_CONFIG.from}>`,
       to: email,
       subject: "Email Verification Code",
-      text: `Hello ${name || "there"}! Your verification code is: ${otp}. This code will expire in 5 minutes.`,
       html: `
-        <h1>Email Verification</h1>
-        <p>Hello ${name || "there"}!</p>
-        <p>Your OTP code is:</p>
-        <h2 style="color: blue; letter-spacing: 5px;">${otp}</h2>
-        <p>This code will expire in 5 minutes.</p>
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background: linear-gradient(135deg, rgb(255, 51, 51), rgb(51, 102, 255), rgb(255, 255, 255)); padding: 30px; border-radius: 10px; text-align: center; margin-bottom: 30px;">
+            <h1 style="color: white; margin: 0; font-size: 28px;">Email Verification</h1>
+          </div>
+          
+          <div style="background: #f8fafc; padding: 30px; border-radius: 10px; margin-bottom: 30px;">
+            <h2 style="color: #1f2937; margin-top: 0;">Hello ${name || "there"}!</h2>
+            <p style="color: #6b7280; font-size: 16px; line-height: 1.6;">
+              Thank you for signing up! Please use the verification code below to complete your registration:
+            </p>
+            
+            <div style="background: white; border: 2px dashed #3b82f6; border-radius: 10px; padding: 20px; text-align: center; margin: 30px 0;">
+              <div style="font-size: 32px; font-weight: bold; color: #3b82f6; letter-spacing: 8px; font-family: 'Courier New', monospace;">
+                ${otp}
+              </div>
+            </div>
+            
+            <p style="color: #ef4444; font-size: 14px; text-align: center; margin: 20px 0;">
+              ⏰ This code will expire in 5 minutes
+            </p>
+            
+            <p style="color: #6b7280; font-size: 14px; line-height: 1.6;">
+              If you didn't request this verification code, please ignore this email.
+            </p>
+          </div>
+          
+          <div style="text-align: center; color: #9ca3af; font-size: 12px;">
+            <p>This is an automated message, please do not reply to this email.</p>
+          </div>
+        </div>
       `,
+      text: `Hello ${name || "there"}! Your verification code is: ${otp}. This code will expire in 5 minutes.`,
     }
 
     const result = await sendEmail(mailOptions)
 
     if (!result.success) throw result.error
 
-    res.json({ success: true, sessionId, message: "Verification code sent to your email" })
+    console.log(`✅ OTP sent successfully to ${email}`)
+
+    res.json({
+      success: true,
+      sessionId,
+      message: "Verification code sent to your email",
+    })
   } catch (error) {
-    console.error("❌ Error sending OTP:", error.message)
-    res.status(500).json({ success: false, error: "Failed to send verification code" })
+    console.error("❌ Error sending OTP:", error)
+    res.status(500).json({
+      success: false,
+      error: "Failed to send verification code",
+    })
   }
 })
-
 
 // Verify OTP endpoint
 app.post("/api/verify-otp", async (req, res) => {
