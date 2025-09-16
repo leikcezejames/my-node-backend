@@ -1,8 +1,8 @@
 const express = require("express")
 const cors = require("cors")
 const fetch = require("node-fetch")
-const nodemailer = require("nodemailer")
 const crypto = require("crypto")
+const sgMail = require("@sendgrid/mail")
 require("dotenv").config()
 
 const app = express()
@@ -10,12 +10,7 @@ const app = express()
 // Middleware
 app.use(
   cors({
-    origin: [
-      "http://localhost:8080",
-      "http://localhost:8081",
-      "http://127.0.0.1:8080",
-      "https://geosubcribers.web.app",
-    ], // Vue dev server URLs
+    origin: ["http://localhost:8080", "http://localhost:8081", "http://127.0.0.1:8080", "https://geosubcribers.web.app"], // Vue dev server URLs
     credentials: true,
   }),
 )
@@ -36,6 +31,13 @@ const EMAIL_CONFIG = {
   from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
 }
 
+if (process.env.SENDGRID_API_KEY) {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY)
+  console.log("✅ SendGrid configured")
+} else {
+  console.error("❌ SENDGRID_API_KEY not set")
+}
+
 // OTP storage and email transporter
 const otpStore = new Map()
 let transporter
@@ -49,25 +51,36 @@ try {
         user: EMAIL_CONFIG.user,
         pass: EMAIL_CONFIG.pass,
       },
-      // Add timeout configurations for deployed environments
-      connectionTimeout: 60000, // 60 seconds
-      greetingTimeout: 30000, // 30 seconds
-      socketTimeout: 60000, // 60 seconds
-      pool: true, // Use connection pooling
-      maxConnections: 5, // Limit concurrent connections
-      maxMessages: 100, // Messages per connection
-      // Add retry configuration
-      retry: {
-        times: 3,
-        delay: 1000,
-      },
     })
-    console.log("✅ Email transporter configured with timeout settings")
+    console.log("✅ Email transporter configured")
   } else {
     console.log("⚠️ Email not configured - Email features will not work")
   }
 } catch (error) {
   console.error("❌ Email configuration error:", error.message)
+}
+
+async function sendEmail(options) {
+  try {
+    const msg = {
+      to: options.to,
+      from: process.env.EMAIL_FROM,
+      subject: options.subject,
+      text: options.text,
+      html: options.html,
+    }
+
+    // Para sa multiple recipients (advisory)
+    if (options.bcc) {
+      msg.bcc = options.bcc
+    }
+
+    await sgMail.send(msg)
+    return { success: true }
+  } catch (error) {
+    console.error("❌ SendGrid error:", error.response?.body || error.message)
+    return { success: false, error }
+  }
 }
 
 // Helper functions
@@ -475,7 +488,7 @@ app.post("/api/send-contact-email", async (req, res) => {
           <!-- Action -->
           <div style="text-align: center; padding: 24px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
             <p style="margin: 0 0 16px 0; color: #64748b; font-size: 14px;">To respond to this inquiry:</p>
-            <a href="mailto:${email}?subject=${encodeURIComponent(`Re: ${inquiryTypeFormatted} - TVNET Response`).replace(/%20/g, " ")}" 
+            <a href="mailto:${email}?subject=${encodeURIComponent(`Re: ${inquiryTypeFormatted} - TVNET Response`).replace(/%20/g, ' ')}" 
               style="display: inline-block; background: ${inquiryTypeColor}; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 500; font-size: 14px;">
               Reply to Customer
             </a>
@@ -544,90 +557,41 @@ app.post("/api/send-otp", async (req, res) => {
     const { email, name } = req.body
 
     if (!email) {
-      return res.status(400).json({
-        success: false,
-        error: "Email is required",
-      })
-    }
-
-    if (!transporter) {
-      return res.status(500).json({
-        success: false,
-        error: "Email service not configured",
-      })
+      return res.status(400).json({ success: false, error: "Email is required" })
     }
 
     const otp = generateOTP()
     const sessionId = generateSessionId()
-    const expiresAt = Date.now() + 5 * 60 * 1000 // 5 minutes
+    const expiresAt = Date.now() + 5 * 60 * 1000
 
-    otpStore.set(sessionId, {
-      otp,
-      email,
-      name,
-      expiresAt,
-      attempts: 0,
-      maxAttempts: 3,
-    })
+    otpStore.set(sessionId, { otp, email, name, expiresAt, attempts: 0, maxAttempts: 3 })
 
     console.log(`📧 Sending OTP ${otp} to ${email}`)
 
     const mailOptions = {
-      from: `"Tamaraw Vision Network, Inc. (TVNET)" <${EMAIL_CONFIG.from}>`,
       to: email,
       subject: "Email Verification Code",
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background: linear-gradient(135deg, rgb(255, 51, 51), rgb(51, 102, 255), rgb(255, 255, 255)); padding: 30px; border-radius: 10px; text-align: center; margin-bottom: 30px;">
-            <h1 style="color: white; margin: 0; font-size: 28px;">Email Verification</h1>
-          </div>
-          
-          <div style="background: #f8fafc; padding: 30px; border-radius: 10px; margin-bottom: 30px;">
-            <h2 style="color: #1f2937; margin-top: 0;">Hello ${name || "there"}!</h2>
-            <p style="color: #6b7280; font-size: 16px; line-height: 1.6;">
-              Thank you for signing up! Please use the verification code below to complete your registration:
-            </p>
-            
-            <div style="background: white; border: 2px dashed #3b82f6; border-radius: 10px; padding: 20px; text-align: center; margin: 30px 0;">
-              <div style="font-size: 32px; font-weight: bold; color: #3b82f6; letter-spacing: 8px; font-family: 'Courier New', monospace;">
-                ${otp}
-              </div>
-            </div>
-            
-            <p style="color: #ef4444; font-size: 14px; text-align: center; margin: 20px 0;">
-              ⏰ This code will expire in 5 minutes
-            </p>
-            
-            <p style="color: #6b7280; font-size: 14px; line-height: 1.6;">
-              If you didn't request this verification code, please ignore this email.
-            </p>
-          </div>
-          
-          <div style="text-align: center; color: #9ca3af; font-size: 12px;">
-            <p>This is an automated message, please do not reply to this email.</p>
-          </div>
-        </div>
-      `,
       text: `Hello ${name || "there"}! Your verification code is: ${otp}. This code will expire in 5 minutes.`,
+      html: `
+        <h1>Email Verification</h1>
+        <p>Hello ${name || "there"}!</p>
+        <p>Your OTP code is:</p>
+        <h2 style="color: blue; letter-spacing: 5px;">${otp}</h2>
+        <p>This code will expire in 5 minutes.</p>
+      `,
     }
 
-    await transporter.sendMail(mailOptions)
+    const result = await sendEmail(mailOptions)
 
-    console.log(`✅ OTP sent successfully to ${email}`)
+    if (!result.success) throw result.error
 
-    res.json({
-      success: true,
-      sessionId,
-      message: "Verification code sent to your email",
-    })
+    res.json({ success: true, sessionId, message: "Verification code sent to your email" })
   } catch (error) {
-    console.error("❌ Error sending OTP:", error)
-    res.status(500).json({
-      success: false,
-      error: "Failed to send verification code",
-    })
+    console.error("❌ Error sending OTP:", error.message)
+    res.status(500).json({ success: false, error: "Failed to send verification code" })
   }
 })
+
 
 // Verify OTP endpoint
 app.post("/api/verify-otp", async (req, res) => {
@@ -770,8 +734,7 @@ app.post("/api/notify-plan-activation-declined", async (req, res) => {
 const SMS_MESSAGES = {
   APPLICATION_APPROVED: "Your application has been approved. Please submit the required documents.",
   APPLICATION_DECLINED: "We regret to inform you that your application has been declined.",
-  DOCUMENTS_APPROVED:
-    "Congratulations! Your submitted document has been approved. You are now a subscriber of TVNET. Please proceed to your payment.",
+  DOCUMENTS_APPROVED: "Congratulations! Your submitted document has been approved. You are now a subscriber of TVNET. Please proceed to your payment.",
   DOCUMENTS_REJECTED: "Sorry, we regret to inform you that your submitted document was rejected.",
 
   // NEW: Plan Change/Stop SMS Messages
@@ -790,10 +753,10 @@ const SMS_MESSAGES = {
     `Reminder: Your TVNET bill of P${amount} (plus P${penalty} penalty if applicable) is due today, ${dueDate}. Please settle promptly to avoid service interruption.`,
   DISCONNECTION_NOTICE: (dueDate, amount, penalty) =>
     `Final Notice: Your TVNET bill of P${amount} (plus P${penalty} penalty) due on ${dueDate} is still unpaid. Your service is subject to disconnection. Please pay immediately.`,
-  RECEIPT_APPROVED: (monthYear, amount) =>
+  RECEIPT_APPROVED: (monthYear, amount) => 
     `Your payment receipt for ${monthYear} amounting to ₱${amount} has been approved. Thank you for your payment!`,
-
-  RECEIPT_REJECTED: (monthYear, reason) =>
+  
+  RECEIPT_REJECTED: (monthYear, reason) => 
     `Your payment receipt for ${monthYear} has been rejected. Reason: ${reason}. Please resubmit a valid receipt.`,
 }
 
@@ -872,69 +835,69 @@ app.post("/api/send-sms", async (req, res) => {
 // NEW: SMS notification endpoint for Receipt Approved
 app.post("/api/notify-receipt-approved", async (req, res) => {
   try {
-    const { phoneNumber, applicantName, monthYear, amount } = req.body
-
-    console.log("📱 Received receipt approval notification:", {
-      phoneNumber,
-      applicantName,
-      monthYear,
-      amount,
-    })
-
+    const { phoneNumber, applicantName, monthYear, amount } = req.body;
+    
+    console.log("📱 Received receipt approval notification:", { 
+      phoneNumber, 
+      applicantName, 
+      monthYear, 
+      amount 
+    });
+    
     if (!phoneNumber || !monthYear || !amount) {
       return res.status(400).json({
         success: false,
         error: "Phone number, month/year, and amount are required",
-      })
+      });
     }
-
-    const personalizedMessage = `Hi ${applicantName || "there"}! ${SMS_MESSAGES.RECEIPT_APPROVED(monthYear, amount)}`
-    const result = await sendSMSNotification(phoneNumber, personalizedMessage)
-
-    console.log("✅ Receipt approval notification sent successfully")
-    res.json(result)
+    
+    const personalizedMessage = `Hi ${applicantName || "there"}! ${SMS_MESSAGES.RECEIPT_APPROVED(monthYear, amount)}`;
+    const result = await sendSMSNotification(phoneNumber, personalizedMessage);
+    
+    console.log("✅ Receipt approval notification sent successfully");
+    res.json(result);
   } catch (error) {
-    console.error("❌ Error sending receipt approval notification:", error)
+    console.error("❌ Error sending receipt approval notification:", error);
     res.status(500).json({
       success: false,
       error: error.message,
-    })
+    });
   }
-})
+});
 
 // NEW: SMS notification endpoint for Receipt Rejected
 app.post("/api/notify-receipt-rejected", async (req, res) => {
   try {
-    const { phoneNumber, applicantName, monthYear, reason } = req.body
-
-    console.log("📱 Received receipt rejection notification:", {
-      phoneNumber,
-      applicantName,
-      monthYear,
-      reason,
-    })
-
+    const { phoneNumber, applicantName, monthYear, reason } = req.body;
+    
+    console.log("📱 Received receipt rejection notification:", { 
+      phoneNumber, 
+      applicantName, 
+      monthYear, 
+      reason 
+    });
+    
     if (!phoneNumber || !monthYear) {
       return res.status(400).json({
         success: false,
         error: "Phone number and month/year are required",
-      })
+      });
     }
-
-    const rejectionReason = reason || "Receipt verification failed"
-    const personalizedMessage = `Hi ${applicantName || "there"}! ${SMS_MESSAGES.RECEIPT_REJECTED(monthYear, rejectionReason)}`
-    const result = await sendSMSNotification(phoneNumber, personalizedMessage)
-
-    console.log("✅ Receipt rejection notification sent successfully")
-    res.json(result)
+    
+    const rejectionReason = reason || "Receipt verification failed";
+    const personalizedMessage = `Hi ${applicantName || "there"}! ${SMS_MESSAGES.RECEIPT_REJECTED(monthYear, rejectionReason)}`;
+    const result = await sendSMSNotification(phoneNumber, personalizedMessage);
+    
+    console.log("✅ Receipt rejection notification sent successfully");
+    res.json(result);
   } catch (error) {
-    console.error("❌ Error sending receipt rejection notification:", error)
+    console.error("❌ Error sending receipt rejection notification:", error);
     res.status(500).json({
       success: false,
       error: error.message,
-    })
+    });
   }
-})
+});
 
 // SMS notification endpoints
 app.post("/api/notify-application-approved", async (req, res) => {
@@ -1349,15 +1312,14 @@ app.post("/api/notify-disconnection-notice", async (req, res) => {
   }
 })
 
+
 // Server startup
 const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
   console.log(`🚀 SMS & Email Backend server running on port ${PORT}`)
   console.log(`📱 SMS API available at: https://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/send-sms`)
   console.log(`📧 OTP API available at: https://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/send-otp`)
-  console.log(
-    `📮 Advisory Email API available at: https://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/send-advisory-email`,
-  )
+  console.log(`📮 Advisory Email API available at: https://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/send-advisory-email`)
   console.log(`🔔 Notification APIs available`)
   console.log(`🔑 SMS API Key configured: ${SEMAPHORE_CONFIG.apiKey ? "Yes" : "No"}`)
   console.log(`📬 Email configured: ${EMAIL_CONFIG.user && EMAIL_CONFIG.pass ? "Yes" : "No"}`)
