@@ -6,29 +6,11 @@ const crypto = require("crypto")
 require("dotenv").config()
 
 const app = express()
+const PORT = process.env.PORT || 3001
 
 // Middleware
-app.use(
-  cors({
-    origin: [
-      "http://localhost:8080",
-      "http://localhost:8081",
-      "http://127.0.0.1:8080",
-      "https://geosubcribers.web.app",
-    ], // Vue dev server URLs
-    credentials: true,
-  }),
-)
+app.use(cors())
 app.use(express.json())
-
-// Email transporter configuration
-const transporter = nodemailer.createTransport({
-  service: process.env.EMAIL_SERVICE || "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-})
 
 // EXISTING: Semaphore configuration
 const SEMAPHORE_CONFIG = {
@@ -37,7 +19,7 @@ const SEMAPHORE_CONFIG = {
   senderName: process.env.SEMAPHORE_SENDER_NAME || "SEMAPHORE",
 }
 
-// Email configuration
+// Email configuration (kept for other features)
 const EMAIL_CONFIG = {
   service: process.env.EMAIL_SERVICE || "gmail",
   user: process.env.EMAIL_USER,
@@ -45,7 +27,26 @@ const EMAIL_CONFIG = {
   from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
 }
 
-// OTP storage only (removed email transporter)
+// Email transporter (kept for other features)
+let transporter
+try {
+  if (EMAIL_CONFIG.user && EMAIL_CONFIG.pass) {
+    transporter = nodemailer.createTransport({
+      service: EMAIL_CONFIG.service,
+      auth: {
+        user: EMAIL_CONFIG.user,
+        pass: EMAIL_CONFIG.pass,
+      },
+    })
+    console.log("✅ Email transporter configured")
+  } else {
+    console.log("⚠️ Email not configured - Email features will not work")
+  }
+} catch (error) {
+  console.error("❌ Email configuration error:", error.message)
+}
+
+// OTP storage
 const otpStore = new Map()
 
 // Helper functions
@@ -121,7 +122,7 @@ app.get("/", (req, res) => {
       "/api/notify-documents-rejected",
       "/api/notify-receipt-approved", // NEW
       "/api/notify-receipt-rejected",
-      "/api/send-sms-otp",
+      "/api/send-otp",
       "/api/verify-otp",
       "/api/send-advisory-email",
       "/api/get-user-emails",
@@ -516,31 +517,23 @@ TVNET • customercare.tvnet@gmail.com • 0916-594-3229
   }
 })
 
-// Send SMS OTP endpoint using Semaphore
-app.post("/api/send-sms-otp", async (req, res) => {
+// Send OTP endpoint
+app.post("/api/send-otp", async (req, res) => {
   try {
-    const { phoneNumber, name } = req.body
+    const { email, name } = req.body
 
-    if (!phoneNumber) {
+    if (!email) {
       return res.status(400).json({
         success: false,
-        error: "Phone number is required",
+        error: "Email is required",
       })
     }
 
-    if (!SEMAPHORE_CONFIG.apiKey) {
+    if (!transporter) {
       return res.status(500).json({
         success: false,
-        error: "SMS service not configured. API key is missing.",
+        error: "Email service not configured",
       })
-    }
-
-    // Format phone number for Philippines (+63)
-    let formattedPhone = phoneNumber.replace(/\D/g, "") // Remove non-digits
-    if (formattedPhone.startsWith("0")) {
-      formattedPhone = "63" + formattedPhone.substring(1) // Replace leading 0 with 63
-    } else if (!formattedPhone.startsWith("63")) {
-      formattedPhone = "63" + formattedPhone // Add PH country code
     }
 
     const otp = generateOTP()
@@ -549,70 +542,73 @@ app.post("/api/send-sms-otp", async (req, res) => {
 
     otpStore.set(sessionId, {
       otp,
-      phoneNumber: formattedPhone,
+      email,
       name,
       expiresAt,
       attempts: 0,
       maxAttempts: 3,
     })
 
-    console.log(`📱 Sending SMS OTP ${otp} to ${formattedPhone}`)
+    console.log(`📧 Sending OTP ${otp} to ${email}`)
 
-    const message = `Hello ${name || "there"}! Your TVNET verification code is: ${otp}. This code will expire in 5 minutes. Do not share this code with anyone.`
+    const mailOptions = {
+      from: `"Tamaraw Vision Network, Inc. (TVNET)" <${EMAIL_CONFIG.from}>`,
+      to: email,
+      subject: "Email Verification Code",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background: linear-gradient(135deg, rgb(255, 51, 51), rgb(51, 102, 255), rgb(255, 255, 255)); padding: 30px; border-radius: 10px; text-align: center; margin-bottom: 30px;">
+            <h1 style="color: white; margin: 0; font-size: 28px;">Email Verification</h1>
+          </div>
+          
+          <div style="background: #f8fafc; padding: 30px; border-radius: 10px; margin-bottom: 30px;">
+            <h2 style="color: #1f2937; margin-top: 0;">Hello ${name || "there"}!</h2>
+            <p style="color: #6b7280; font-size: 16px; line-height: 1.6;">
+              Thank you for signing up! Please use the verification code below to complete your registration:
+            </p>
+            
+            <div style="background: white; border: 2px dashed #3b82f6; border-radius: 10px; padding: 20px; text-align: center; margin: 30px 0;">
+              <div style="font-size: 32px; font-weight: bold; color: #3b82f6; letter-spacing: 8px; font-family: 'Courier New', monospace;">
+                ${otp}
+              </div>
+            </div>
+            
+            <p style="color: #ef4444; font-size: 14px; text-align: center; margin: 20px 0;">
+              ⏰ This code will expire in 5 minutes
+            </p>
+            
+            <p style="color: #6b7280; font-size: 14px; line-height: 1.6;">
+              If you didn't request this verification code, please ignore this email.
+            </p>
+          </div>
+          
+          <div style="text-align: center; color: #9ca3af; font-size: 12px;">
+            <p>This is an automated message, please do not reply to this email.</p>
+          </div>
+        </div>
+      `,
+      text: `Hello ${name || "there"}! Your verification code is: ${otp}. This code will expire in 5 minutes.`,
+    }
 
-    const response = await fetch(SEMAPHORE_CONFIG.baseUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        apikey: SEMAPHORE_CONFIG.apiKey,
-        number: formattedPhone,
-        message: message,
-        sendername: SEMAPHORE_CONFIG.senderName,
-      }),
+    await transporter.sendMail(mailOptions)
+
+    console.log(`✅ OTP sent successfully to ${email}`)
+
+    res.json({
+      success: true,
+      sessionId,
+      message: "Verification code sent to your email",
     })
-
-    const contentType = response.headers.get("content-type")
-    let result
-
-    if (contentType && contentType.includes("application/json")) {
-      result = await response.json()
-    } else {
-      const textResponse = await response.text()
-      console.error("Non-JSON response from Semaphore API:", textResponse)
-
-      return res.status(400).json({
-        success: false,
-        error: `API Error: ${textResponse}`,
-        details: "The SMS service returned a non-JSON response. Please check your API key and account status.",
-      })
-    }
-
-    if (response.ok && result) {
-      console.log(`✅ SMS OTP sent successfully to ${formattedPhone}:`, result)
-      res.json({
-        success: true,
-        sessionId,
-        message: "SMS verification code sent to your phone",
-      })
-    } else {
-      console.error("SMS OTP sending failed:", result)
-      res.status(400).json({
-        success: false,
-        error: result?.message || result?.error || "Failed to send SMS OTP",
-        details: result,
-      })
-    }
   } catch (error) {
-    console.error("❌ Error sending SMS OTP:", error)
+    console.error("❌ Error sending OTP:", error)
     res.status(500).json({
       success: false,
-      error: "Failed to send SMS verification code",
+      error: "Failed to send verification code",
     })
   }
 })
 
+// Verify OTP endpoint
 app.post("/api/verify-otp", async (req, res) => {
   try {
     const { sessionId, otp } = req.body
@@ -662,12 +658,12 @@ app.post("/api/verify-otp", async (req, res) => {
 
     otpStore.delete(sessionId)
 
-    console.log(`✅ SMS OTP verified successfully for ${otpData.phoneNumber}`)
+    console.log(`✅ OTP verified successfully for ${otpData.email}`)
 
     res.json({
       success: true,
-      message: "Phone number verified successfully",
-      phoneNumber: otpData.phoneNumber,
+      message: "Email verified successfully",
+      email: otpData.email,
     })
   } catch (error) {
     console.error("❌ Error verifying OTP:", error)
@@ -1332,18 +1328,202 @@ app.post("/api/notify-disconnection-notice", async (req, res) => {
   }
 })
 
-// Server startup
-const PORT = process.env.PORT || 3001
+// NEW: Added endpoint to check if email already exists
+app.post("/api/check-email", async (req, res) => {
+  try {
+    const { email } = req.body
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: "Email is required",
+      })
+    }
+
+    // Here you would typically check your database for existing email
+    // For now, we'll simulate the check
+    console.log(`🔍 Checking if email exists: ${email}`)
+
+    // Simulate database check - replace with actual database query
+    const emailExists = false // Replace with actual database check
+
+    res.json({
+      success: true,
+      exists: emailExists,
+      message: emailExists ? "Email already exists" : "Email is available",
+    })
+  } catch (error) {
+    console.error("❌ Error checking email:", error)
+    res.status(500).json({
+      success: false,
+      error: "Failed to check email availability",
+    })
+  }
+})
+
+app.post("/api/send-sms-otp", async (req, res) => {
+  try {
+    const { phoneNumber, name, email } = req.body // Added email parameter
+
+    if (!phoneNumber) {
+      return res.status(400).json({
+        success: false,
+        error: "Phone number is required",
+      })
+    }
+
+    if (!SEMAPHORE_CONFIG.apiKey) {
+      return res.status(500).json({
+        success: false,
+        error: "SMS service not configured. API key is missing.",
+      })
+    }
+
+    // Format phone number for Philippines (+63)
+    let formattedPhone = phoneNumber.replace(/\D/g, "") // Remove non-digits
+    if (formattedPhone.startsWith("0")) {
+      formattedPhone = "63" + formattedPhone.substring(1) // Replace leading 0 with 63
+    } else if (!formattedPhone.startsWith("63")) {
+      formattedPhone = "63" + formattedPhone // Add PH country code
+    }
+
+    const otp = generateOTP()
+    const sessionId = generateSessionId()
+    const expiresAt = Date.now() + 5 * 60 * 1000 // 5 minutes
+
+    otpStore.set(sessionId, {
+      otp,
+      phoneNumber: formattedPhone,
+      email: email || null, // Store email for account creation
+      name,
+      expiresAt,
+      attempts: 0,
+      maxAttempts: 3,
+    })
+
+    console.log(`📱 Sending SMS OTP ${otp} to ${formattedPhone}`)
+
+    const message = `Hello ${name || "there"}! Your TVNET verification code is: ${otp}. This code will expire in 5 minutes. Do not share this code with anyone.`
+
+    const response = await fetch(SEMAPHORE_CONFIG.baseUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        apikey: SEMAPHORE_CONFIG.apiKey,
+        number: formattedPhone,
+        message: message,
+        sendername: SEMAPHORE_CONFIG.senderName,
+      }),
+    })
+
+    const contentType = response.headers.get("content-type")
+    let result
+
+    if (contentType && contentType.includes("application/json")) {
+      result = await response.json()
+    } else {
+      const textResponse = await response.text()
+      console.error("Non-JSON response from Semaphore API:", textResponse)
+
+      return res.status(400).json({
+        success: false,
+        error: `API Error: ${textResponse}`,
+        details: "The SMS service returned a non-JSON response. Please check your API key and account status.",
+      })
+    }
+
+    if (response.ok && result) {
+      console.log(`✅ SMS OTP sent successfully to ${formattedPhone}:`, result)
+      res.json({
+        success: true,
+        sessionId,
+        message: "SMS verification code sent to your phone",
+      })
+    } else {
+      console.error("SMS OTP sending failed:", result)
+      res.status(400).json({
+        success: false,
+        error: result?.message || result?.error || "Failed to send SMS OTP",
+        details: result,
+      })
+    }
+  } catch (error) {
+    console.error("❌ Error sending SMS OTP:", error)
+    res.status(500).json({
+      success: false,
+      error: "Failed to send SMS verification code",
+    })
+  }
+})
+
+app.post("/api/verify-otp", async (req, res) => {
+  try {
+    const { sessionId, otp } = req.body
+
+    if (!sessionId || !otp) {
+      return res.status(400).json({
+        success: false,
+        error: "Session ID and OTP are required",
+      })
+    }
+
+    const otpData = otpStore.get(sessionId)
+
+    if (!otpData) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid or expired session",
+      })
+    }
+
+    if (Date.now() > otpData.expiresAt) {
+      otpStore.delete(sessionId)
+      return res.status(400).json({
+        success: false,
+        error: "Verification code has expired",
+      })
+    }
+
+    if (otpData.attempts >= otpData.maxAttempts) {
+      otpStore.delete(sessionId)
+      return res.status(400).json({
+        success: false,
+        error: "Too many failed attempts",
+      })
+    }
+
+    if (otpData.otp !== otp) {
+      otpData.attempts++
+      otpStore.set(sessionId, otpData)
+
+      return res.status(400).json({
+        success: false,
+        error: "Invalid verification code",
+        attemptsLeft: otpData.maxAttempts - otpData.attempts,
+      })
+    }
+
+    otpStore.delete(sessionId)
+
+    console.log(`✅ OTP verified successfully for ${otpData.phoneNumber}`)
+
+    res.json({
+      success: true,
+      message: "Phone number verified successfully",
+      phoneNumber: otpData.phoneNumber,
+      email: otpData.email, // Include email for account creation
+    })
+  } catch (error) {
+    console.error("❌ Error verifying OTP:", error)
+    res.status(500).json({
+      success: false,
+      error: "Failed to verify code",
+    })
+  }
+})
+
 app.listen(PORT, () => {
-  console.log(`🚀 SMS & Email Backend server running on port ${PORT}`)
-  console.log(`📱 SMS API available at: https://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/send-sms`)
-  console.log(`📧 OTP API available at: https://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/send-otp`)
-  console.log(
-    `📮 Advisory Email API available at: https://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/send-advisory-email`,
-  )
-  console.log(`🔔 Notification APIs available`)
-  console.log(`🔑 SMS API Key configured: ${SEMAPHORE_CONFIG.apiKey ? "Yes" : "No"}`)
-  console.log(`📬 Email configured: ${EMAIL_CONFIG.user && EMAIL_CONFIG.pass ? "Yes" : "No"}`)
-  console.log(`🌐 Health check: https://my-node-backend-production-2ebf.up.railway.app:${PORT}/`)
-  console.log(`🧪 Test endpoint: https://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/test`)
+  console.log(`🚀 Server running on port ${PORT}`)
 })
