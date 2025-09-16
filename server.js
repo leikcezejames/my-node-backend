@@ -10,7 +10,12 @@ const app = express()
 // Middleware
 app.use(
   cors({
-    origin: ["http://localhost:8080", "http://localhost:8081", "http://127.0.0.1:8080", "https://geosubcribers.web.app"], // Vue dev server URLs
+    origin: [
+      "http://localhost:8080",
+      "http://localhost:8081",
+      "http://127.0.0.1:8080",
+      "https://geosubcribers.web.app",
+    ], // Vue dev server URLs
     credentials: true,
   }),
 )
@@ -44,8 +49,20 @@ try {
         user: EMAIL_CONFIG.user,
         pass: EMAIL_CONFIG.pass,
       },
+      // Add timeout configurations for deployed environments
+      connectionTimeout: 60000, // 60 seconds
+      greetingTimeout: 30000, // 30 seconds
+      socketTimeout: 60000, // 60 seconds
+      pool: true, // Use connection pooling
+      maxConnections: 5, // Limit concurrent connections
+      maxMessages: 100, // Messages per connection
+      // Add retry configuration
+      retry: {
+        times: 3,
+        delay: 1000,
+      },
     })
-    console.log("✅ Email transporter configured")
+    console.log("✅ Email transporter configured with timeout settings")
   } else {
     console.log("⚠️ Email not configured - Email features will not work")
   }
@@ -458,7 +475,7 @@ app.post("/api/send-contact-email", async (req, res) => {
           <!-- Action -->
           <div style="text-align: center; padding: 24px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
             <p style="margin: 0 0 16px 0; color: #64748b; font-size: 14px;">To respond to this inquiry:</p>
-            <a href="mailto:${email}?subject=${encodeURIComponent(`Re: ${inquiryTypeFormatted} - TVNET Response`).replace(/%20/g, ' ')}" 
+            <a href="mailto:${email}?subject=${encodeURIComponent(`Re: ${inquiryTypeFormatted} - TVNET Response`).replace(/%20/g, " ")}" 
               style="display: inline-block; background: ${inquiryTypeColor}; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 500; font-size: 14px;">
               Reply to Customer
             </a>
@@ -753,7 +770,8 @@ app.post("/api/notify-plan-activation-declined", async (req, res) => {
 const SMS_MESSAGES = {
   APPLICATION_APPROVED: "Your application has been approved. Please submit the required documents.",
   APPLICATION_DECLINED: "We regret to inform you that your application has been declined.",
-  DOCUMENTS_APPROVED: "Congratulations! Your submitted document has been approved. You are now a subscriber of TVNET. Please proceed to your payment.",
+  DOCUMENTS_APPROVED:
+    "Congratulations! Your submitted document has been approved. You are now a subscriber of TVNET. Please proceed to your payment.",
   DOCUMENTS_REJECTED: "Sorry, we regret to inform you that your submitted document was rejected.",
 
   // NEW: Plan Change/Stop SMS Messages
@@ -772,10 +790,10 @@ const SMS_MESSAGES = {
     `Reminder: Your TVNET bill of P${amount} (plus P${penalty} penalty if applicable) is due today, ${dueDate}. Please settle promptly to avoid service interruption.`,
   DISCONNECTION_NOTICE: (dueDate, amount, penalty) =>
     `Final Notice: Your TVNET bill of P${amount} (plus P${penalty} penalty) due on ${dueDate} is still unpaid. Your service is subject to disconnection. Please pay immediately.`,
-  RECEIPT_APPROVED: (monthYear, amount) => 
+  RECEIPT_APPROVED: (monthYear, amount) =>
     `Your payment receipt for ${monthYear} amounting to ₱${amount} has been approved. Thank you for your payment!`,
-  
-  RECEIPT_REJECTED: (monthYear, reason) => 
+
+  RECEIPT_REJECTED: (monthYear, reason) =>
     `Your payment receipt for ${monthYear} has been rejected. Reason: ${reason}. Please resubmit a valid receipt.`,
 }
 
@@ -854,69 +872,69 @@ app.post("/api/send-sms", async (req, res) => {
 // NEW: SMS notification endpoint for Receipt Approved
 app.post("/api/notify-receipt-approved", async (req, res) => {
   try {
-    const { phoneNumber, applicantName, monthYear, amount } = req.body;
-    
-    console.log("📱 Received receipt approval notification:", { 
-      phoneNumber, 
-      applicantName, 
-      monthYear, 
-      amount 
-    });
-    
+    const { phoneNumber, applicantName, monthYear, amount } = req.body
+
+    console.log("📱 Received receipt approval notification:", {
+      phoneNumber,
+      applicantName,
+      monthYear,
+      amount,
+    })
+
     if (!phoneNumber || !monthYear || !amount) {
       return res.status(400).json({
         success: false,
         error: "Phone number, month/year, and amount are required",
-      });
+      })
     }
-    
-    const personalizedMessage = `Hi ${applicantName || "there"}! ${SMS_MESSAGES.RECEIPT_APPROVED(monthYear, amount)}`;
-    const result = await sendSMSNotification(phoneNumber, personalizedMessage);
-    
-    console.log("✅ Receipt approval notification sent successfully");
-    res.json(result);
+
+    const personalizedMessage = `Hi ${applicantName || "there"}! ${SMS_MESSAGES.RECEIPT_APPROVED(monthYear, amount)}`
+    const result = await sendSMSNotification(phoneNumber, personalizedMessage)
+
+    console.log("✅ Receipt approval notification sent successfully")
+    res.json(result)
   } catch (error) {
-    console.error("❌ Error sending receipt approval notification:", error);
+    console.error("❌ Error sending receipt approval notification:", error)
     res.status(500).json({
       success: false,
       error: error.message,
-    });
+    })
   }
-});
+})
 
 // NEW: SMS notification endpoint for Receipt Rejected
 app.post("/api/notify-receipt-rejected", async (req, res) => {
   try {
-    const { phoneNumber, applicantName, monthYear, reason } = req.body;
-    
-    console.log("📱 Received receipt rejection notification:", { 
-      phoneNumber, 
-      applicantName, 
-      monthYear, 
-      reason 
-    });
-    
+    const { phoneNumber, applicantName, monthYear, reason } = req.body
+
+    console.log("📱 Received receipt rejection notification:", {
+      phoneNumber,
+      applicantName,
+      monthYear,
+      reason,
+    })
+
     if (!phoneNumber || !monthYear) {
       return res.status(400).json({
         success: false,
         error: "Phone number and month/year are required",
-      });
+      })
     }
-    
-    const rejectionReason = reason || "Receipt verification failed";
-    const personalizedMessage = `Hi ${applicantName || "there"}! ${SMS_MESSAGES.RECEIPT_REJECTED(monthYear, rejectionReason)}`;
-    const result = await sendSMSNotification(phoneNumber, personalizedMessage);
-    
-    console.log("✅ Receipt rejection notification sent successfully");
-    res.json(result);
+
+    const rejectionReason = reason || "Receipt verification failed"
+    const personalizedMessage = `Hi ${applicantName || "there"}! ${SMS_MESSAGES.RECEIPT_REJECTED(monthYear, rejectionReason)}`
+    const result = await sendSMSNotification(phoneNumber, personalizedMessage)
+
+    console.log("✅ Receipt rejection notification sent successfully")
+    res.json(result)
   } catch (error) {
-    console.error("❌ Error sending receipt rejection notification:", error);
+    console.error("❌ Error sending receipt rejection notification:", error)
     res.status(500).json({
       success: false,
       error: error.message,
-    });
+    })
   }
-});
+})
 
 // SMS notification endpoints
 app.post("/api/notify-application-approved", async (req, res) => {
@@ -1331,14 +1349,15 @@ app.post("/api/notify-disconnection-notice", async (req, res) => {
   }
 })
 
-
 // Server startup
 const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
   console.log(`🚀 SMS & Email Backend server running on port ${PORT}`)
   console.log(`📱 SMS API available at: https://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/send-sms`)
   console.log(`📧 OTP API available at: https://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/send-otp`)
-  console.log(`📮 Advisory Email API available at: https://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/send-advisory-email`)
+  console.log(
+    `📮 Advisory Email API available at: https://my-node-backend-production-2ebf.up.railway.app:${PORT}/api/send-advisory-email`,
+  )
   console.log(`🔔 Notification APIs available`)
   console.log(`🔑 SMS API Key configured: ${SEMAPHORE_CONFIG.apiKey ? "Yes" : "No"}`)
   console.log(`📬 Email configured: ${EMAIL_CONFIG.user && EMAIL_CONFIG.pass ? "Yes" : "No"}`)
